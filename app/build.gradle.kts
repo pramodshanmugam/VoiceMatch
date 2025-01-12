@@ -5,6 +5,7 @@ plugins {
 }
 
 android {
+
     namespace = "com.example.voicematchapp"
     compileSdk = 35
 
@@ -18,6 +19,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
 
     buildTypes {
         release {

@@ -1,9 +1,7 @@
 package com.example.voicematchapp
 
-
 import android.Manifest
 import android.content.pm.PackageManager
-import android.content.res.AssetFileDescriptor
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -21,7 +19,6 @@ import androidx.core.app.ActivityCompat
 import com.example.voicematchapp.ui.theme.VoiceMatchAppTheme
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -44,7 +41,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
                 initAudioRecorder()
-                loadModel()
+                loadModelFromAssets()
             } else {
                 Log.e("VoiceMatchApp", "Permission denied")
             }
@@ -65,13 +62,6 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
             return
         }
         audioRecorder = AudioRecord(
@@ -83,18 +73,19 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun loadModel() {
+    private fun loadModelFromAssets() {
         try {
-            val assetFileDescriptor: AssetFileDescriptor = assets.openFd("yamnet.tflite")
+            val assetFileDescriptor = assets.openFd("1.tflite")
             val inputStream = FileInputStream(assetFileDescriptor.fileDescriptor)
-            val model = inputStream.channel.map(
+            val modelBuffer = inputStream.channel.map(
                 java.nio.channels.FileChannel.MapMode.READ_ONLY,
                 assetFileDescriptor.startOffset,
                 assetFileDescriptor.declaredLength
             )
-            interpreter = Interpreter(model)
-        } catch (e: IOException) {
-            Log.e("VoiceMatchApp", "Failed to load TFLite model: $e")
+            interpreter = Interpreter(modelBuffer)
+            Log.d("VoiceMatchApp", "Model loaded successfully from assets.")
+        } catch (e: Exception) {
+            Log.e("VoiceMatchApp", "Failed to load model from assets: $e")
         }
     }
 
@@ -119,6 +110,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun processAudio(audioBuffer: ByteBuffer) {
+        if (!::interpreter.isInitialized) {
+            Log.e("VoiceMatchApp", "Interpreter is not initialized.")
+            return
+        }
+
         val inputBuffer = ByteBuffer.allocateDirect(audioBuffer.capacity()).order(ByteOrder.nativeOrder())
         inputBuffer.put(audioBuffer)
         inputBuffer.rewind()
