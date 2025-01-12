@@ -33,6 +33,7 @@ class MainActivity : ComponentActivity() {
         AudioFormat.ENCODING_PCM_16BIT
     )
     private lateinit var interpreter: Interpreter
+    private lateinit var classMap: List<String>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,6 +43,7 @@ class MainActivity : ComponentActivity() {
             if (granted) {
                 initAudioRecorder()
                 loadModelFromAssets()
+                classMap = loadClassMap()
             } else {
                 Log.e("VoiceMatchApp", "Permission denied")
             }
@@ -89,6 +91,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun loadClassMap(): List<String> {
+        val classMap = mutableListOf<String>()
+        try {
+            val inputStream = assets.open("yamnet_class_map.csv")
+            inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    val split = line.split(",")
+                    if (split.size >= 2) {
+                        classMap.add(split[1]) // Assumes the class name is in the second column
+                    }
+                }
+            }
+            Log.d("VoiceMatchApp", "Class map loaded successfully.")
+        } catch (e: Exception) {
+            Log.e("VoiceMatchApp", "Failed to load class map: $e")
+        }
+        return classMap
+    }
+
     private fun startRecording() {
         audioRecorder.startRecording()
         recording = true
@@ -109,43 +130,68 @@ class MainActivity : ComponentActivity() {
         Log.d("VoiceMatchApp", "Recording stopped.")
     }
 
+    private fun preprocessAudio(audioBuffer: ByteBuffer): FloatArray {
+        val audioData = FloatArray(audioBuffer.remaining() / 2) // 16-bit PCM
+        audioBuffer.rewind()
+
+        for (i in audioData.indices) {
+            val sample = audioBuffer.short.toFloat() / Short.MAX_VALUE
+            audioData[i] = sample
+        }
+
+        return audioData
+    }
+
     private fun processAudio(audioBuffer: ByteBuffer) {
-        if (!::interpreter.isInitialized) {
-            Log.e("VoiceMatchApp", "Interpreter is not initialized.")
-            return
+        val audioData = preprocessAudio(audioBuffer)
+
+        // Prepare input tensor
+        val inputTensor = arrayOf(audioData)
+
+        // Define output tensors
+        val outputScores = Array(audioData.size / 480) { FloatArray(521) }
+        val outputEmbeddings = Array(audioData.size / 480) { FloatArray(1024) }
+        val outputSpectrogram = Array(96) { FloatArray(64) } // Updated to match [96, 64]
+
+        try {
+            // Run inference
+            val outputs = HashMap<Int, Any>()
+            outputs[0] = outputScores
+            outputs[1] = outputEmbeddings
+            outputs[2] = outputSpectrogram
+
+            interpreter.runForMultipleInputsOutputs(inputTensor, outputs)
+
+            // Extract outputs
+            val scores = outputs[0] as Array<FloatArray>
+            val embeddings = outputs[1] as Array<FloatArray>
+            val logMelSpectrogram = outputs[2] as Array<FloatArray>
+
+            // Aggregate scores (e.g., mean across frames)
+            val meanScores = FloatArray(521) { 0f }
+            for (frameScores in scores) {
+                for (i in frameScores.indices) {
+                    meanScores[i] += frameScores[i]
+                }
+            }
+            for (i in meanScores.indices) {
+                meanScores[i] = meanScores[i] / scores.size
+            }
+
+            // Find the highest scoring class
+            val maxIndex = meanScores.indices.maxByOrNull { meanScores[it] } ?: -1
+            if (maxIndex != -1) {
+                Log.d("VoiceMatchApp", "Predicted Class: Index $maxIndex, Score: ${meanScores[maxIndex]}")
+                if (maxIndex in classMap.indices) {
+                    Log.d("VoiceMatchApp", "Predicted Class Name: ${classMap[maxIndex]}")
+                }
+            }
+
+            Log.d("VoiceMatchApp", "Embeddings: ${embeddings.joinToString { it.joinToString() }}")
+            Log.d("VoiceMatchApp", "Log Mel Spectrogram: ${logMelSpectrogram.joinToString { it.joinToString() }}")
+        } catch (e: Exception) {
+            Log.e("VoiceMatchApp", "Error during inference: $e")
         }
-
-        val inputBuffer = ByteBuffer.allocateDirect(audioBuffer.capacity()).order(ByteOrder.nativeOrder())
-        inputBuffer.put(audioBuffer)
-        inputBuffer.rewind()
-
-        val outputBuffer = Array(1) { FloatArray(1024) }
-        interpreter.run(inputBuffer, outputBuffer)
-
-        val embeddings = outputBuffer[0]
-        Log.d("VoiceMatchApp", "Extracted embeddings: ${embeddings.joinToString()}")
-        compareEmbeddings(embeddings)
-    }
-
-    private fun compareEmbeddings(embeddings: FloatArray) {
-        val storedEmbeddings = loadStoredEmbeddings()
-        val similarity = cosineSimilarity(embeddings, storedEmbeddings)
-        if (similarity > 0.85) {
-            Log.d("VoiceMatchApp", "Voice matched with similarity: $similarity")
-        } else {
-            Log.d("VoiceMatchApp", "No match found. Similarity: $similarity")
-        }
-    }
-
-    private fun loadStoredEmbeddings(): FloatArray {
-        return FloatArray(1024) { 0.1f } // Replace with actual stored embeddings
-    }
-
-    private fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
-        val dotProduct = a.zip(b) { x, y -> x * y }.sum()
-        val normA = Math.sqrt(a.map { it * it }.sum().toDouble()).toFloat()
-        val normB = Math.sqrt(b.map { it * it }.sum().toDouble()).toFloat()
-        return dotProduct / (normA * normB)
     }
 
     @Composable
