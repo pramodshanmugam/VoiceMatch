@@ -17,6 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.example.voicematchapp.ui.theme.VoiceMatchAppTheme
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.ByteBuffer
@@ -34,6 +39,7 @@ class MainActivity : ComponentActivity() {
     )
     private lateinit var interpreter: Interpreter
     private lateinit var classMap: List<String>
+    private val client = OkHttpClient() // OkHttpClient instance
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -183,7 +189,11 @@ class MainActivity : ComponentActivity() {
             if (maxIndex != -1) {
                 Log.d("VoiceMatchApp", "Predicted Class: Index $maxIndex, Score: ${meanScores[maxIndex]}")
                 if (maxIndex in classMap.indices) {
-                    Log.d("VoiceMatchApp", "Predicted Class Name: ${classMap[maxIndex]}")
+                    val predictedClassName = classMap[maxIndex]
+                    Log.d("VoiceMatchApp", "Predicted Class Name: $predictedClassName")
+
+                    // Send log data to FastAPI
+                    sendLogDataToApi(predictedClassName, meanScores[maxIndex])
                 }
             }
 
@@ -194,6 +204,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun sendLogDataToApi(predictedClassName: String, confidenceScore: Float) {
+        val url = "http://10.0.2.2:8000/logs/" // Use 10.0.2.2 for emulator or host IP for physical devices
+        val jsonBody = """
+        {
+            "id": 0,
+            "timestamp": "${System.currentTimeMillis()}",
+            "message": "Predicted Class: $predictedClassName with confidence: $confidenceScore"
+        }
+    """.trimIndent()
+        val body: RequestBody = jsonBody.toRequestBody("application/json".toMediaTypeOrNull())
+
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .build()
+
+        Thread {
+            try {
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    Log.d("VoiceMatchApp", "Log sent successfully: ${response.body?.string()}")
+                } else {
+                    Log.e("VoiceMatchApp", "Failed to send log: ${response.message}")
+                }
+            } catch (e: Exception) {
+                Log.e("VoiceMatchApp", "Error while sending log: $e")
+            }
+        }.start()
+    }
     @Composable
     fun MainContent(innerPadding: PaddingValues) {
         Column(modifier = Modifier.padding(innerPadding)) {

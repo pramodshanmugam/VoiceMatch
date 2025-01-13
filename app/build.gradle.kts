@@ -43,7 +43,7 @@ android {
 }
 
 dependencies {
-
+    // AndroidX dependencies
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -52,27 +52,28 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation("androidx.core:core-ktx:1.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.3.1")
-    implementation(libs.tensorflow.lite.support.api)
-    implementation(libs.tensorflow.lite.support.api)
-    // https://mvnrepository.com/artifact/org.tensorflow/tensorflow-lite
-    runtimeOnly("org.tensorflow:tensorflow-lite:2.16.1")
-    implementation ("org.tensorflow:tensorflow-lite:2.10.0")
-    implementation ("org.tensorflow:tensorflow-lite-support:0.4.0")
-    // https://mvnrepository.com/artifact/org.tensorflow/tensorflow-lite-support
-    runtimeOnly("org.tensorflow:tensorflow-lite-support:0.4.3")
 
-    // https://mvnrepository.com/artifact/be.tarsos.dsp/core
+    // TensorFlow Lite dependencies
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+
+    implementation ("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation ("com.squareup.retrofit2:converter-gson:2.9.0")
+    // Tarsos DSP for audio processing
     implementation("be.tarsos.dsp:core:2.5")
+
+    // Android UI dependencies
     implementation("androidx.appcompat:appcompat:1.4.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.2")
-    implementation("androidx.appcompat:appcompat:1.4.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.2")
-    implementation("com.squareup.okhttp3:okhttp:4.9.2")  // For HTTP requests
-    implementation("androidx.compose.material3:material3:1.0.0-alpha01") // For Material 3 UI
+
+    // HTTP networking
+    implementation("com.squareup.okhttp3:okhttp:4.9.2")
+
+    // Compose Material and UI Tooling
+    implementation("androidx.compose.material3:material3:1.0.0-alpha01")
     implementation("androidx.compose.ui:ui-tooling-preview:1.0.1")
     implementation("androidx.compose.ui:ui-tooling:1.0.1")
+
+    // Testing dependencies
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
