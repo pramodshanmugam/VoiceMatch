@@ -3,6 +3,7 @@ package com.example.voicematchapp
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaRecorder
 import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -17,14 +18,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.example.voicematchapp.ui.theme.VoiceMatchAppTheme
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
 import java.util.*
 
 class MainActivity : ComponentActivity() {
 
     private var isListening = false
+    private var isRecording = false
     private lateinit var speechRecognizer: SpeechRecognizer
+    private var audioFile: File? = null
+    private var mediaRecorder: MediaRecorder? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,8 +105,8 @@ class MainActivity : ComponentActivity() {
                 if (matches != null && matches.isNotEmpty()) {
                     Log.d("VoiceMatchApp", "Final Recognized Speech: ${matches.joinToString(", ")}")
 
-                    if (matches.any { it.equals("hello", ignoreCase = true) }) {
-                        Log.d("VoiceMatchApp", "Matched phrase detected: Hello")
+                    if (matches.any { it.equals(transcriptionText, ignoreCase = true) }) {
+                        Log.d("VoiceMatchApp", "Matched phrase detected: $transcriptionText")
                         triggerApi()
                     } else {
                         Log.d("VoiceMatchApp", "No match found for the desired phrase.")
@@ -110,6 +120,11 @@ class MainActivity : ComponentActivity() {
                 val partialMatches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 partialMatches?.forEach { partialResult ->
                     Log.d("VoiceMatchApp", "Partial Recognized Speech: $partialResult")
+                    if (partialResult.contains(transcriptionText?:"gibbbbbrishhhhh", ignoreCase = true)) {
+                        Log.d("VoiceMatchApp", "Matched phrase detected: $transcriptionText")
+                        Log.d("Api","triggered")
+                        triggerApi()
+                    }
                 }
             }
 
@@ -157,6 +172,81 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    private fun startRecording() {
+        try {
+            audioFile = File(filesDir, "recording_${System.currentTimeMillis()}.mp3")
+            mediaRecorder = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(audioFile?.absolutePath)
+                prepare()
+                start()
+            }
+            isRecording = true
+            Log.d("VoiceMatchApp", "Recording started")
+        } catch (e: IOException) {
+            Log.e("VoiceMatchApp", "Recording failed: ${e.message}")
+        }
+    }
+
+    private fun stopRecording() {
+        mediaRecorder?.apply {
+            stop()
+            release()
+        }
+        mediaRecorder = null
+        isRecording = false
+        Log.d("VoiceMatchApp", "Recording stopped, file saved at: ${audioFile?.absolutePath}")
+    }
+
+    var responseString: String? = null
+    var transcriptionText: String? = null // To store the extracted transcription_text
+
+    private fun uploadAudio() {
+        audioFile?.let { file ->
+            val client = OkHttpClient()
+            val requestBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file",
+                    file.name,
+                    RequestBody.create("audio/wav".toMediaType(), file)
+                )
+                .build()
+
+            val request = Request.Builder()
+                .url("https://2d4wwhv1-8000.use.devtunnels.ms/upload-audio/") // Replace with your FastAPI URL
+                .post(requestBody)
+                .build()
+
+            Thread {
+                try {
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        responseString = response.body?.string() ?: "Empty response"
+                        Log.d("VoiceMatchApp", "Audio uploaded successfully: $responseString")
+
+                        // Parse the JSON response to extract transcription_text
+                        try {
+                            val jsonResponse = JSONObject(responseString)
+                            transcriptionText = jsonResponse.getString("transcription_text")
+                            Log.d("VoiceMatchApp", "Transcription Text: $transcriptionText")
+                        } catch (jsonException: Exception) {
+                            Log.e("VoiceMatchApp", "Error parsing JSON: $jsonException")
+                        }
+                    } else {
+                        responseString = "Error: ${response.message}"
+                        Log.e("VoiceMatchApp", "Audio upload failed: $responseString")
+                    }
+                } catch (e: Exception) {
+                    responseString = "Exception: $e"
+                    Log.e("VoiceMatchApp", "Audio upload error: $e")
+                }
+            }.start()
+        } ?: Log.e("VoiceMatchApp", "No audio file to upload")
+    }
+
     @Composable
     fun MainContent(innerPadding: PaddingValues) {
         Column(modifier = Modifier.padding(innerPadding)) {
@@ -173,6 +263,22 @@ class MainActivity : ComponentActivity() {
                     .padding(16.dp)
             ) {
                 Text(text = if (isListening) "Stop Listening" else "Start Listening")
+            }
+
+            Button(
+                onClick = {
+                    if (!isRecording) {
+                        startRecording()
+                    } else {
+                        stopRecording()
+                        uploadAudio()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(text = if (isRecording) "Stop Recording and Upload" else "Start Recording")
             }
         }
     }
