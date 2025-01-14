@@ -210,7 +210,7 @@ class MainActivity : ComponentActivity() {
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "file",
-                    file.name,
+                    "user1.wav", // Set the desired filename here
                     RequestBody.create("audio/wav".toMediaType(), file)
                 )
                 .build()
