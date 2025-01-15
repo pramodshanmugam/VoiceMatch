@@ -107,7 +107,7 @@ class MainActivity : ComponentActivity() {
 
                     if (matches.any { it.equals(transcriptionText, ignoreCase = true) }) {
                         Log.d("VoiceMatchApp", "Matched phrase detected: $transcriptionText")
-                        triggerApi()
+                        triggerApi(audioFile)
                     } else {
                         Log.d("VoiceMatchApp", "No match found for the desired phrase.")
                     }
@@ -120,10 +120,10 @@ class MainActivity : ComponentActivity() {
                 val partialMatches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 partialMatches?.forEach { partialResult ->
                     Log.d("VoiceMatchApp", "Partial Recognized Speech: $partialResult")
-                    if (partialResult.contains(transcriptionText?:"gibbbbbrishhhhh", ignoreCase = true)) {
+                    if (partialResult.contains(transcriptionText ?: "gibbbbbrishhhhh", ignoreCase = true)) {
                         Log.d("VoiceMatchApp", "Matched phrase detected: $transcriptionText")
-                        Log.d("Api","triggered")
-                        triggerApi()
+                        Log.d("Api", "triggered")
+                        triggerApi(audioFile)
                     }
                 }
             }
@@ -151,42 +151,68 @@ class MainActivity : ComponentActivity() {
         Log.d("VoiceMatchApp", "Stopped listening")
     }
 
-    private fun triggerApi() {
-        val client = OkHttpClient()
-        val request = Request.Builder()
-            .url("https://your-api-endpoint.com/trigger") // Replace with your API URL
-            .get()
-            .build()
+    private fun triggerApi(audioFile: File?) {
+        audioFile?.let { file ->
+            val client = OkHttpClient()
+            val requestBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file", // This must match FastAPI's parameter name
+                    "partial_audio_user1.mp3", // Provide a valid filename
+                    RequestBody.create("audio/mp3".toMediaType(), file)
+                )
+                .build()
 
-        Thread {
-            try {
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    Log.d("VoiceMatchApp", "API triggered successfully")
-                } else {
-                    Log.e("VoiceMatchApp", "API call failed: ${response.message}")
+            val request = Request.Builder()
+                .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/") // Use correct API endpoint
+                .post(requestBody)
+                .build()
+
+            Thread {
+                try {
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        Log.d("VoiceMatchApp", "API triggered successfully")
+                    } else {
+                        Log.e("VoiceMatchApp", "API call failed: ${response.code}")
+                        Log.e("VoiceMatchApp", "Response body: ${response.body?.string()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e("VoiceMatchApp", "API call error: $e")
                 }
-            } catch (e: Exception) {
-                Log.e("VoiceMatchApp", "API call error: $e")
-            }
-        }.start()
+            }.start()
+        } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
     }
+
 
     private fun startRecording() {
         try {
+            // Release any previous MediaRecorder instance
+            mediaRecorder?.release()
+            mediaRecorder = null
+
+            // Create audio file
             audioFile = File(filesDir, "recording_${System.currentTimeMillis()}.mp3")
+            if (!audioFile!!.exists()) audioFile!!.createNewFile()
+
+            // Initialize MediaRecorder
             mediaRecorder = MediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setOutputFile(audioFile?.absolutePath)
-                prepare()
-                start()
+                prepare() // Prepare MediaRecorder
+                start()   // Start recording
             }
+
             isRecording = true
             Log.d("VoiceMatchApp", "Recording started")
         } catch (e: IOException) {
             Log.e("VoiceMatchApp", "Recording failed: ${e.message}")
+            e.printStackTrace()
+        } catch (e: IllegalStateException) {
+            Log.e("VoiceMatchApp", "MediaRecorder state error: ${e.message}")
+            e.printStackTrace()
         }
     }
 
@@ -210,8 +236,8 @@ class MainActivity : ComponentActivity() {
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "file",
-                    "user1.wav", // Set the desired filename here
-                    RequestBody.create("audio/wav".toMediaType(), file)
+                    "user1.mp3", // Set the desired filename here
+                    RequestBody.create("audio/mp3".toMediaType(), file)
                 )
                 .build()
 
