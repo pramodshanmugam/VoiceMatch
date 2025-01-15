@@ -157,14 +157,14 @@ class MainActivity : ComponentActivity() {
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
-                    "file", // This must match FastAPI's parameter name
-                    "partial_audio_user1.mp3", // Provide a valid filename
+                    "file",
+                    "partial_audio_user1.mp3",
                     RequestBody.create("audio/mp3".toMediaType(), file)
                 )
                 .build()
 
             val request = Request.Builder()
-                .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/") // Use correct API endpoint
+                .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/")
                 .post(requestBody)
                 .build()
 
@@ -172,7 +172,19 @@ class MainActivity : ComponentActivity() {
                 try {
                     val response = client.newCall(request).execute()
                     if (response.isSuccessful) {
-                        Log.d("VoiceMatchApp", "API triggered successfully")
+                        val responseBody = response.body?.string()
+                        Log.d("VoiceMatchApp", "API Response: $responseBody")
+
+                        val jsonObject = JSONObject(responseBody ?: "{}")
+                        val isSameSpeaker = jsonObject.optBoolean("is_same_speaker", false)
+
+                        if (isSameSpeaker) {
+                            // Start SOS Activity
+                            val intent = Intent(this, SOSActivity::class.java)
+                            startActivity(intent)
+                        } else {
+                            Log.d("VoiceMatchApp", "Not the same speaker, no SOS triggered.")
+                        }
                     } else {
                         Log.e("VoiceMatchApp", "API call failed: ${response.code}")
                         Log.e("VoiceMatchApp", "Response body: ${response.body?.string()}")
@@ -183,6 +195,7 @@ class MainActivity : ComponentActivity() {
             }.start()
         } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
     }
+
 
 
     private fun startRecording() {

@@ -5,14 +5,19 @@
 
     <!-- Permissions for Recording Audio and Accessing Storage -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
 
 
     <!-- Declare the minimum SDK version -->
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="21"
         tools:ignore="ExpiredTargetSdkVersion,GradleOverrides" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -24,6 +29,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.VoiceMatchApp"
         tools:targetApi="31">
+
+        <activity android:name=".SOSActivity"
+            android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar" />
+
+
 
         <!-- Main Activity -->
         <activity
