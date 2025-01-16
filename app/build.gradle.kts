@@ -66,6 +66,8 @@ dependencies {
     runtimeOnly("org.tensorflow:tensorflow-lite-support:0.4.3")
 
     // https://mvnrepository.com/artifact/be.tarsos.dsp/core
+    implementation ("com.google.android.material:material:1.9.0")
+
     implementation("be.tarsos.dsp:core:2.5")
     implementation("androidx.appcompat:appcompat:1.4.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.2")

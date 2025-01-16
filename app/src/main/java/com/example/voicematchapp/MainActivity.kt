@@ -1,6 +1,7 @@
 package com.example.voicematchapp
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
@@ -10,24 +11,11 @@ import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import android.view.MotionEvent
+import android.widget.Button
+import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
-import com.example.voicematchapp.ui.theme.VoiceMatchAppTheme
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -37,41 +25,90 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.util.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.text.style.TextAlign
+import androidx.appcompat.app.AlertDialog
+import com.google.android.material.card.MaterialCardView
 
 
 class MainActivity : ComponentActivity() {
 
-    private var isListening = false
+    private lateinit var recordButton: MaterialCardView
+
+    private lateinit var statusText: TextView
     private var isRecording = false
+    private var isListening = false
+    private var WAKE_WORD: String? = null
     private lateinit var speechRecognizer: SpeechRecognizer
     private var audioFile: File? = null
     private var mediaRecorder: MediaRecorder? = null
+    private var recordingHandler: Handler? = null
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Set the content view to the XML layout
+        setContentView(R.layout.activity_main)
+
+        // Initialize UI components
+        recordButton = findViewById(R.id.recordButton)
+        statusText = findViewById(R.id.statusText)
+
         // Request microphone permission
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                initSpeechRecognizer()
-                startListeningAndRecording()
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+        } else {
+            initSpeechRecognizer()
+        }
 
-            } else {
-                Log.e("VoiceMatchApp", "Permission denied")
-            }
-        }.launch(Manifest.permission.RECORD_AUDIO)
-
-        setContent {
-            VoiceMatchAppTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainContent(innerPadding)
+        // Set up button behavior for recording
+        recordButton.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    isRecording = true
+                    stopListening()
+                    stopRecording()
+                    startRecording()
+                    statusText.text = "Recording..."
+                    true
                 }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    isRecording = false
+                    stopRecording()
+                    uploadAudio { wakeWord ->
+                        showWakeWordDialog(wakeWord)
+                    }
+                    statusText.text = "Press and Hold to Record"
+                    true
+                }
+                else -> false
             }
         }
+
+        // Start listening and recording
+        startListeningAndRecording()
     }
+//    override fun onCreate(savedInstanceState: Bundle?) {
+//        super.onCreate(savedInstanceState)
+//
+//        // Request microphone permission
+//        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+//            if (granted) {
+//                initSpeechRecognizer()
+//                startListeningAndRecording()
+//
+//            } else {
+//                Log.e("VoiceMatchApp", "Permission denied")
+//            }
+//        }.launch(Manifest.permission.RECORD_AUDIO)
+//
+//        setContent {
+//            VoiceMatchAppTheme {
+//                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+//                    MainContent(innerPadding)
+//                }
+//            }
+//        }
+//    }
 
     private fun startListeningAndRecording() {
         startContinuousRecording() // Start continuous recording
@@ -79,7 +116,7 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    private var recordingHandler: Handler? = null
+//    private var recordingHandler: Handler? = null
 
     private fun startContinuousRecording() {
         recordingHandler = Handler(Looper.getMainLooper())
@@ -107,7 +144,19 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    private var WAKE_WORD: String? = null // Replace with your desired wake word
+//    private var WAKE_WORD: String? = null // Replace with your desired wake word
+
+    private fun showWakeWordDialog(wakeWord: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Confirm Wake Word")
+            .setMessage("Is this your wake word: \"$wakeWord\"?")
+            .setPositiveButton("Yes") { _, _ ->
+                WAKE_WORD = wakeWord
+                Log.d("VoiceMatchApp", "Wake word confirmed: $WAKE_WORD")
+            }
+            .setNegativeButton("No", null)
+            .show()
+    }
 
 
     private fun initSpeechRecognizer() {
@@ -270,7 +319,7 @@ class MainActivity : ComponentActivity() {
                             "API triggered successfully. Response: $responseBody"
                         )
 
-                        // Parse the response to handle `is_same_speaker`
+                        // Parse the response to handle is_same_speaker
                         val jsonObject = JSONObject(responseBody ?: "{}")
                         val isSameSpeaker = jsonObject.optBoolean("is_same_speaker", false)
 
@@ -400,109 +449,4 @@ class MainActivity : ComponentActivity() {
         } ?: Log.e("VoiceMatchApp", "No audio file to upload")
     }
 
-
-    @Composable
-    fun MainContent(innerPadding: PaddingValues) {
-        var isRecording by remember { mutableStateOf(false) }
-        var showWakeWordDialog by remember { mutableStateOf(false) }
-        var extractedWakeWord by remember { mutableStateOf("") }
-        var confirmedWakeWord by remember { mutableStateOf("") }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Title
-            Text(
-                text = "Voice Match App",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 32.dp)
-            )
-
-            // Status Text
-            Text(
-                text = if (isRecording) "Recording..." else "Press and Hold to Record",
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(16.dp)
-            )
-
-            // Circular Hold-to-Record Button
-            Box(
-                modifier = Modifier
-                    .size(120.dp)
-                    .padding(16.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                try {
-                                    isRecording = true
-                                    stopListening()
-                                    stopRecording()
-                                    startRecording()
-                                    awaitRelease()
-                                    isRecording = false
-                                    stopRecording()
-                                    uploadAudio { wakeWord ->
-                                        extractedWakeWord = wakeWord
-                                        showWakeWordDialog = true
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("VoiceMatchApp", "Error during recording: ${e.message}")
-                                }
-                            }
-                        )
-                    }
-                    .background(
-                        color = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                        shape = MaterialTheme.shapes.large
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (isRecording) "Recording" else "Hold",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            }
-
-            // Confirm Wake Word Dialog
-            if (showWakeWordDialog) {
-                AlertDialog(
-                    onDismissRequest = { showWakeWordDialog = false },
-                    title = {
-                        Text(
-                            text = "Confirm Wake Word",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    },
-                    text = {
-                        Text(
-                            text = "Is this your wake word: \"$extractedWakeWord\"?",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            confirmedWakeWord = extractedWakeWord
-                            showWakeWordDialog = false
-                            WAKE_WORD = confirmedWakeWord // Set the wake word
-                            Log.d("VoiceMatchApp", "Wake word confirmed: $WAKE_WORD")
-                        }) {
-                            Text(text = "Yes")
-                        }
-                    },
-                    dismissButton = {
-                        OutlinedButton(onClick = { showWakeWordDialog = false }) {
-                            Text(text = "No")
-                        }
-                    }
-                )
-            }
-        }
-    }
 }
