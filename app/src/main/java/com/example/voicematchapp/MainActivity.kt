@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -274,9 +275,12 @@ class MainActivity : ComponentActivity() {
                         val isSameSpeaker = jsonObject.optBoolean("is_same_speaker", false)
 
                         if (isSameSpeaker) {
-                            // Start SOS Activity
-                            val intent = Intent(this, SOSActivity::class.java)
-                            startActivity(intent)
+                            Log.d("VoiceMatchApp", "Same speaker detected, triggering SOSActivity.")
+                            // Start SOS Activity on the main thread
+                            Handler(Looper.getMainLooper()).post {
+                                val intent = Intent(this@MainActivity, SOSActivity::class.java)
+                                startActivity(intent)
+                            }
                         } else {
                             Log.d("VoiceMatchApp", "Not the same speaker, no SOS triggered.")
                         }
@@ -296,7 +300,6 @@ class MainActivity : ComponentActivity() {
             }.start()
         } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
     }
-
 
     private fun startRecording() {
         try {
@@ -348,7 +351,7 @@ class MainActivity : ComponentActivity() {
     var responseString: String? = null
     var transcriptionText: String? = null // To store the extracted transcription_text
 
-    private fun uploadAudio() {
+    private fun uploadAudio(onWakeWordConfirmed: (String) -> Unit) {
         audioFile?.let { file ->
             val client = OkHttpClient()
             val requestBody = MultipartBody.Builder()
@@ -375,8 +378,13 @@ class MainActivity : ComponentActivity() {
                         // Parse the JSON response to extract transcription_text
                         try {
                             val jsonResponse = JSONObject(responseString)
-                            WAKE_WORD = jsonResponse.getString("transcription_text")
-                            Log.d("VoiceMatchApp", "Transcription Text: $WAKE_WORD")
+                            val newWakeWord = jsonResponse.getString("transcription_text")
+                            Log.d("VoiceMatchApp", "Transcription Text: $newWakeWord")
+
+                            // Notify the Compose UI to show the popup
+                            Handler(Looper.getMainLooper()).post {
+                                onWakeWordConfirmed(newWakeWord)
+                            }
                         } catch (jsonException: Exception) {
                             Log.e("VoiceMatchApp", "Error parsing JSON: $jsonException")
                         }
@@ -392,70 +400,109 @@ class MainActivity : ComponentActivity() {
         } ?: Log.e("VoiceMatchApp", "No audio file to upload")
     }
 
+
     @Composable
     fun MainContent(innerPadding: PaddingValues) {
-        var isRecording by remember { mutableStateOf(false) } // Track recording state
+        var isRecording by remember { mutableStateOf(false) }
+        var showWakeWordDialog by remember { mutableStateOf(false) }
+        var extractedWakeWord by remember { mutableStateOf("") }
+        var confirmedWakeWord by remember { mutableStateOf("") }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            horizontalAlignment = Alignment.CenterHorizontally, // Align content horizontally
-            verticalArrangement = Arrangement.Center // Align content vertically
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
+            // Title
             Text(
-                text = if (isRecording) "Recording" else "Hold",
-                style = MaterialTheme.typography.bodyLarge, // Use updated typography
-                color = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.padding(8.dp)
+                text = "Voice Match App",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 32.dp)
             )
-            // Hold-to-Record Button
-            Button(
-                onClick = { /* Empty onClick */ },
+
+            // Status Text
+            Text(
+                text = if (isRecording) "Recording..." else "Press and Hold to Record",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(16.dp)
+            )
+
+            // Circular Hold-to-Record Button
+            Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .padding(16.dp),
-                contentPadding = PaddingValues(0.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                ),
-                shape = MaterialTheme.shapes.medium
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(8.dp)
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onPress = {
-                                    try {
-                                        isRecording = true // Start recording
-                                        stopListening()
-                                        stopRecording()
-                                        startRecording()
-                                        awaitRelease() // Wait for user to release
-                                        isRecording = false // Stop recording
-                                        stopRecording()
-                                        uploadAudio() // Trigger upload
-                                    } catch (e: Exception) {
-                                        Log.e(
-                                            "VoiceMatchApp",
-                                            "Error during recording: ${e.message}"
-                                        )
+                    .size(120.dp)
+                    .padding(16.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                try {
+                                    isRecording = true
+                                    stopListening()
+                                    stopRecording()
+                                    startRecording()
+                                    awaitRelease()
+                                    isRecording = false
+                                    stopRecording()
+                                    uploadAudio { wakeWord ->
+                                        extractedWakeWord = wakeWord
+                                        showWakeWordDialog = true
                                     }
+                                } catch (e: Exception) {
+                                    Log.e("VoiceMatchApp", "Error during recording: ${e.message}")
                                 }
-                            )
+                            }
+                        )
+                    }
+                    .background(
+                        color = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        shape = MaterialTheme.shapes.large
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (isRecording) "Recording" else "Hold",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onPrimary
+                )
+            }
+
+            // Confirm Wake Word Dialog
+            if (showWakeWordDialog) {
+                AlertDialog(
+                    onDismissRequest = { showWakeWordDialog = false },
+                    title = {
+                        Text(
+                            text = "Confirm Wake Word",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "Is this your wake word: \"$extractedWakeWord\"?",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            confirmedWakeWord = extractedWakeWord
+                            showWakeWordDialog = false
+                            WAKE_WORD = confirmedWakeWord // Set the wake word
+                            Log.d("VoiceMatchApp", "Wake word confirmed: $WAKE_WORD")
+                        }) {
+                            Text(text = "Yes")
                         }
-                ) {
-                    Text(
-                        text = if (isRecording) "Recording" else "Hold",
-                        style = MaterialTheme.typography.bodyLarge, // Use bodyLarge instead of body1
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.align(Alignment.Center) // Center text within the Box
-                    )
-                }
+                    },
+                    dismissButton = {
+                        OutlinedButton(onClick = { showWakeWordDialog = false }) {
+                            Text(text = "No")
+                        }
+                    }
+                )
             }
         }
     }
-
 }
