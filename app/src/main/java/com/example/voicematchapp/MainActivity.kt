@@ -13,10 +13,17 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.example.voicematchapp.ui.theme.VoiceMatchAppTheme
@@ -29,6 +36,10 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.util.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.text.style.TextAlign
+
 
 class MainActivity : ComponentActivity() {
 
@@ -60,6 +71,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
     private fun startListeningAndRecording() {
         startContinuousRecording() // Start continuous recording
         startListening() // Start speech recognition
@@ -137,6 +149,7 @@ class MainActivity : ComponentActivity() {
                         Log.e("VoiceMatchApp", "Recognizer is busy, skipping restart")
                         return // Do not restart listening to prevent overlapping sessions
                     }
+
                     SpeechRecognizer.ERROR_SERVER -> "Server error"
                     SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No input detected"
                     else -> "Unknown error"
@@ -146,7 +159,6 @@ class MainActivity : ComponentActivity() {
                 // Restart the listener if it's a recoverable error
                 restartListening()
             }
-
 
 
             override fun onResults(results: Bundle?) {
@@ -162,7 +174,6 @@ class MainActivity : ComponentActivity() {
                 }
                 restartListening() // Restart for the next recognition cycle
             }
-
 
 
             private fun restartListening() {
@@ -182,10 +193,9 @@ class MainActivity : ComponentActivity() {
             }
 
 
-
-
             override fun onPartialResults(partialResults: Bundle?) {
-                val partialMatches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val partialMatches =
+                    partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 partialMatches?.forEach { partialResult ->
                     Log.d("VoiceMatchApp", "Partial Recognized Speech: $partialResult")
                     if (partialResult.equals(WAKE_WORD, ignoreCase = true)) {
@@ -201,10 +211,16 @@ class MainActivity : ComponentActivity() {
 
     private fun startListening() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 7000) // 7 seconds
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                7000
+            ) // 7 seconds
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 15000) // 15 seconds
         }
         speechRecognizer.startListening(intent)
@@ -248,7 +264,10 @@ class MainActivity : ComponentActivity() {
                     val response = client.newCall(request).execute()
                     if (response.isSuccessful) {
                         val responseBody = response.body?.string()
-                        Log.d("VoiceMatchApp", "API triggered successfully. Response: $responseBody")
+                        Log.d(
+                            "VoiceMatchApp",
+                            "API triggered successfully. Response: $responseBody"
+                        )
 
                         // Parse the response to handle `is_same_speaker`
                         val jsonObject = JSONObject(responseBody ?: "{}")
@@ -277,8 +296,6 @@ class MainActivity : ComponentActivity() {
             }.start()
         } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
     }
-
-
 
 
     private fun startRecording() {
@@ -377,46 +394,68 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun MainContent(innerPadding: PaddingValues) {
-        Column(modifier = Modifier.padding(innerPadding)) {
-//            Button(
-//                onClick = {
-//                    if (!isListening) {
-//                        startListening()
-//                    } else {
-//                        stopListening()
-//                    }
-//                },
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .padding(16.dp)
-//            ) {
-//                Text(text = if (isListening) "Stop Listening" else "Start Listening")
-//            }
+        var isRecording by remember { mutableStateOf(false) } // Track recording state
 
-            Button(
-                onClick = {
-
-                        stopRecording()
-                        stopListening()
-                        startRecording()
-//                        uploadAudio()
-
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            horizontalAlignment = Alignment.CenterHorizontally, // Align content horizontally
+            verticalArrangement = Arrangement.Center // Align content vertically
+        ) {
+            Text(
+                text = if (isRecording) "Recording" else "Hold",
+                style = MaterialTheme.typography.bodyLarge, // Use updated typography
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.padding(8.dp)
             )
-
-            {
-                Text(text = if (isRecording) "Stop Recording and Upload" else "Start Recording")
-            }
+            // Hold-to-Record Button
             Button(
-                onClick = {
-                    stopRecording()
-                    uploadAudio()
-//                    startListeningAndRecording()
-
-                }) { Text(text = "Stop recording and upload")}
+                onClick = { /* Empty onClick */ },
+                modifier = Modifier
+                    .size(100.dp)
+                    .padding(16.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                ),
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(8.dp)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = {
+                                    try {
+                                        isRecording = true // Start recording
+                                        stopListening()
+                                        stopRecording()
+                                        startRecording()
+                                        awaitRelease() // Wait for user to release
+                                        isRecording = false // Stop recording
+                                        stopRecording()
+                                        uploadAudio() // Trigger upload
+                                    } catch (e: Exception) {
+                                        Log.e(
+                                            "VoiceMatchApp",
+                                            "Error during recording: ${e.message}"
+                                        )
+                                    }
+                                }
+                            )
+                        }
+                ) {
+                    Text(
+                        text = if (isRecording) "Recording" else "Hold",
+                        style = MaterialTheme.typography.bodyLarge, // Use bodyLarge instead of body1
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.align(Alignment.Center) // Center text within the Box
+                    )
+                }
+            }
         }
     }
+
 }

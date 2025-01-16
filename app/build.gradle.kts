@@ -56,6 +56,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.3.1")
     implementation(libs.tensorflow.lite.support.api)
     implementation(libs.tensorflow.lite.support.api)
+    implementation("androidx.activity:activity-compose:1.7.0")
+    implementation("androidx.compose.runtime:runtime-livedata:1.4.0")
     // https://mvnrepository.com/artifact/org.tensorflow/tensorflow-lite
     runtimeOnly("org.tensorflow:tensorflow-lite:2.16.1")
     implementation ("org.tensorflow:tensorflow-lite:2.10.0")
