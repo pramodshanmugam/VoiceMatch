@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
     }
 
 
-    private val WAKE_WORD = "match" // Replace with your desired wake word
+    private var WAKE_WORD: String? = null // Replace with your desired wake word
 
 
     private fun initSpeechRecognizer() {
@@ -219,55 +219,64 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun triggerApi(audioFile: File?) {
-        if (audioFile == null || !audioFile.exists()) {
-            Log.e("VoiceMatchApp", "No audio file available for API trigger")
-            return
-        }
+        audioFile?.let { file ->
+            Log.d("VoiceMatchApp", "Triggering API with file: ${file.absolutePath}")
 
-        // Stop recording if ongoing
-        if (isRecording) {
-            stopRecording()
-            Log.d("VoiceMatchApp", "Recording stopped before triggering API")
-        }
-
-        Log.d("VoiceMatchApp", "Triggering API with file: ${audioFile.absolutePath}")
-
-        val client = OkHttpClient()
-        val requestBody = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart(
-                "file",
-                audioFile.name,
-                RequestBody.create("audio/mp3".toMediaType(), audioFile)
-            )
-            .build()
-
-        val request = Request.Builder()
-            .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/") // Replace with your actual API endpoint
-            .post(requestBody)
-            .build()
-
-        Thread {
-            try {
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val responseBody = response.body?.string()
-                    Log.d("VoiceMatchApp", "API Response: $responseBody")
-                } else {
-                    Log.e("VoiceMatchApp", "API call failed: ${response.code}")
-                }
-            } catch (e: Exception) {
-                Log.e("VoiceMatchApp", "API call error: $e")
-            } finally {
-                // Restart listening and recording on the main thread
-                Handler(Looper.getMainLooper()).post {
-                    startListeningAndRecording()
-                }
+            // Stop recording if ongoing
+            if (isRecording) {
+                stopRecording()
+                Log.d("VoiceMatchApp", "Recording stopped before triggering API")
             }
-        }.start()
+
+            val client = OkHttpClient()
+            val requestBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file", // This must match FastAPI's parameter name
+                    "partial_audio_user1.mp3", // Provide a valid filename
+                    RequestBody.create("audio/mp3".toMediaType(), file)
+                )
+                .build()
+
+            val request = Request.Builder()
+                .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/") // Replace with your actual API endpoint
+                .post(requestBody)
+                .build()
+
+            Thread {
+                try {
+                    val response = client.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string()
+                        Log.d("VoiceMatchApp", "API triggered successfully. Response: $responseBody")
+
+                        // Parse the response to handle `is_same_speaker`
+                        val jsonObject = JSONObject(responseBody ?: "{}")
+                        val isSameSpeaker = jsonObject.optBoolean("is_same_speaker", false)
+
+                        if (isSameSpeaker) {
+                            // Start SOS Activity
+                            val intent = Intent(this, SOSActivity::class.java)
+                            startActivity(intent)
+                        } else {
+                            Log.d("VoiceMatchApp", "Not the same speaker, no SOS triggered.")
+                        }
+                    } else {
+                        // Log failure details
+                        Log.e("VoiceMatchApp", "API call failed with code: ${response.code}")
+                        Log.e("VoiceMatchApp", "Response body: ${response.body?.string()}")
+                    }
+                } catch (e: Exception) {
+                    Log.e("VoiceMatchApp", "API call error: ${e.message}")
+                } finally {
+                    // Restart listening and recording on the main thread
+                    Handler(Looper.getMainLooper()).post {
+                        startListeningAndRecording()
+                    }
+                }
+            }.start()
+        } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
     }
-
-
 
 
 
@@ -349,8 +358,8 @@ class MainActivity : ComponentActivity() {
                         // Parse the JSON response to extract transcription_text
                         try {
                             val jsonResponse = JSONObject(responseString)
-                            transcriptionText = jsonResponse.getString("transcription_text")
-                            Log.d("VoiceMatchApp", "Transcription Text: $transcriptionText")
+                            WAKE_WORD = jsonResponse.getString("transcription_text")
+                            Log.d("VoiceMatchApp", "Transcription Text: $WAKE_WORD")
                         } catch (jsonException: Exception) {
                             Log.e("VoiceMatchApp", "Error parsing JSON: $jsonException")
                         }
@@ -369,36 +378,45 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun MainContent(innerPadding: PaddingValues) {
         Column(modifier = Modifier.padding(innerPadding)) {
-            Button(
-                onClick = {
-                    if (!isListening) {
-                        startListening()
-                    } else {
-                        stopListening()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text(text = if (isListening) "Stop Listening" else "Start Listening")
-            }
+//            Button(
+//                onClick = {
+//                    if (!isListening) {
+//                        startListening()
+//                    } else {
+//                        stopListening()
+//                    }
+//                },
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(16.dp)
+//            ) {
+//                Text(text = if (isListening) "Stop Listening" else "Start Listening")
+//            }
 
             Button(
                 onClick = {
-                    if (!isRecording) {
-                        startRecording()
-                    } else {
+
                         stopRecording()
-                        uploadAudio()
-                    }
+                        stopListening()
+                        startRecording()
+//                        uploadAudio()
+
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
-            ) {
+            )
+
+            {
                 Text(text = if (isRecording) "Stop Recording and Upload" else "Start Recording")
             }
+            Button(
+                onClick = {
+                    stopRecording()
+                    uploadAudio()
+//                    startListeningAndRecording()
+
+                }) { Text(text = "Stop recording and upload")}
         }
     }
 }
