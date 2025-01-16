@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
@@ -43,6 +45,8 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
                 initSpeechRecognizer()
+                startListeningAndRecording()
+
             } else {
                 Log.e("VoiceMatchApp", "Permission denied")
             }
@@ -56,6 +60,42 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    private fun startListeningAndRecording() {
+        startContinuousRecording() // Start continuous recording
+        startListening() // Start speech recognition
+    }
+
+
+    private var recordingHandler: Handler? = null
+
+    private fun startContinuousRecording() {
+        recordingHandler = Handler(Looper.getMainLooper())
+        recordingHandler?.post(object : Runnable {
+            override fun run() {
+                if (isRecording) {
+                    Log.d("VoiceMatchApp", "Stopping current recording")
+                    stopRecording() // Stop the current recording
+                }
+                Log.d("VoiceMatchApp", "Starting new recording")
+                startRecording() // Start a new recording
+                recordingHandler?.postDelayed(this, 10000) // Loop every 10 seconds
+            }
+        })
+        Log.d("VoiceMatchApp", "Continuous recording started")
+    }
+
+
+    private fun stopContinuousRecording() {
+        recordingHandler?.removeCallbacksAndMessages(null)
+        recordingHandler = null
+        if (isRecording) {
+            stopRecording()
+        }
+    }
+
+
+    private val WAKE_WORD = "match" // Replace with your desired wake word
+
 
     private fun initSpeechRecognizer() {
         if (ActivityCompat.checkSelfPermission(
@@ -81,7 +121,9 @@ class MainActivity : ComponentActivity() {
 
             override fun onEndOfSpeech() {
                 Log.d("VoiceMatchApp", "Speech ended")
+                restartListening() // Restart after speech ends
             }
+
 
             override fun onError(error: Int) {
                 val errorMessage = when (error) {
@@ -91,39 +133,64 @@ class MainActivity : ComponentActivity() {
                     SpeechRecognizer.ERROR_NETWORK -> "Network error"
                     SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
                     SpeechRecognizer.ERROR_NO_MATCH -> "No match found"
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer is busy"
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
+                        Log.e("VoiceMatchApp", "Recognizer is busy, skipping restart")
+                        return // Do not restart listening to prevent overlapping sessions
+                    }
                     SpeechRecognizer.ERROR_SERVER -> "Server error"
                     SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No input detected"
                     else -> "Unknown error"
                 }
                 Log.e("VoiceMatchApp", "Speech recognition error: $errorMessage")
+
+                // Restart the listener if it's a recoverable error
+                restartListening()
             }
+
+
 
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
 
-                if (matches != null && matches.isNotEmpty()) {
-                    Log.d("VoiceMatchApp", "Final Recognized Speech: ${matches.joinToString(", ")}")
+                if (matches != null) {
+                    Log.d("VoiceMatchApp", "Recognized Speech: ${matches.joinToString(", ")}")
 
-                    if (matches.any { it.equals(transcriptionText, ignoreCase = true) }) {
-                        Log.d("VoiceMatchApp", "Matched phrase detected: $transcriptionText")
-                        triggerApi(audioFile)
-                    } else {
-                        Log.d("VoiceMatchApp", "No match found for the desired phrase.")
+                    if (matches.any { it.equals(WAKE_WORD, ignoreCase = true) }) {
+                        Log.d("VoiceMatchApp", "Wake word detected: $WAKE_WORD")
+                        triggerApi(audioFile) // Trigger your API call
                     }
-                } else {
-                    Log.e("VoiceMatchApp", "No results received from speech recognition.")
                 }
+                restartListening() // Restart for the next recognition cycle
             }
+
+
+
+            private fun restartListening() {
+                if (isListening) {
+                    try {
+                        speechRecognizer.stopListening() // Stop the current session
+                        isListening = false // Mark as not listening
+                    } catch (e: Exception) {
+                        Log.e("VoiceMatchApp", "Error stopping recognizer: ${e.message}")
+                    }
+                }
+
+                // Restart listening after a short delay
+                Handler(Looper.getMainLooper()).postDelayed({
+                    startListening()
+                }, 10000) // Delay of 500ms
+            }
+
+
+
 
             override fun onPartialResults(partialResults: Bundle?) {
                 val partialMatches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 partialMatches?.forEach { partialResult ->
                     Log.d("VoiceMatchApp", "Partial Recognized Speech: $partialResult")
-                    if (partialResult.contains(transcriptionText ?: "gibbbbbrishhhhh", ignoreCase = true)) {
-                        Log.d("VoiceMatchApp", "Matched phrase detected: $transcriptionText")
-                        Log.d("Api", "triggered")
-                        triggerApi(audioFile)
+                    if (partialResult.equals(WAKE_WORD, ignoreCase = true)) {
+                        Log.d("VoiceMatchApp", "Wake word detected in partial results: $WAKE_WORD")
+                        triggerApi(audioFile) // Trigger your API call
                     }
                 }
             }
@@ -152,49 +219,56 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun triggerApi(audioFile: File?) {
-        audioFile?.let { file ->
-            val client = OkHttpClient()
-            val requestBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart(
-                    "file",
-                    "partial_audio_user1.mp3",
-                    RequestBody.create("audio/mp3".toMediaType(), file)
-                )
-                .build()
+        if (audioFile == null || !audioFile.exists()) {
+            Log.e("VoiceMatchApp", "No audio file available for API trigger")
+            return
+        }
 
-            val request = Request.Builder()
-                .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/")
-                .post(requestBody)
-                .build()
+        // Stop recording if ongoing
+        if (isRecording) {
+            stopRecording()
+            Log.d("VoiceMatchApp", "Recording stopped before triggering API")
+        }
 
-            Thread {
-                try {
-                    val response = client.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        val responseBody = response.body?.string()
-                        Log.d("VoiceMatchApp", "API Response: $responseBody")
+        Log.d("VoiceMatchApp", "Triggering API with file: ${audioFile.absolutePath}")
 
-                        val jsonObject = JSONObject(responseBody ?: "{}")
-                        val isSameSpeaker = jsonObject.optBoolean("is_same_speaker", false)
+        val client = OkHttpClient()
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart(
+                "file",
+                audioFile.name,
+                RequestBody.create("audio/mp3".toMediaType(), audioFile)
+            )
+            .build()
 
-                        if (isSameSpeaker) {
-                            // Start SOS Activity
-                            val intent = Intent(this, SOSActivity::class.java)
-                            startActivity(intent)
-                        } else {
-                            Log.d("VoiceMatchApp", "Not the same speaker, no SOS triggered.")
-                        }
-                    } else {
-                        Log.e("VoiceMatchApp", "API call failed: ${response.code}")
-                        Log.e("VoiceMatchApp", "Response body: ${response.body?.string()}")
-                    }
-                } catch (e: Exception) {
-                    Log.e("VoiceMatchApp", "API call error: $e")
+        val request = Request.Builder()
+            .url("https://2d4wwhv1-8000.use.devtunnels.ms/trigger/") // Replace with your actual API endpoint
+            .post(requestBody)
+            .build()
+
+        Thread {
+            try {
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string()
+                    Log.d("VoiceMatchApp", "API Response: $responseBody")
+                } else {
+                    Log.e("VoiceMatchApp", "API call failed: ${response.code}")
                 }
-            }.start()
-        } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
+            } catch (e: Exception) {
+                Log.e("VoiceMatchApp", "API call error: $e")
+            } finally {
+                // Restart listening and recording on the main thread
+                Handler(Looper.getMainLooper()).post {
+                    startListeningAndRecording()
+                }
+            }
+        }.start()
     }
+
+
+
 
 
 
@@ -204,9 +278,10 @@ class MainActivity : ComponentActivity() {
             mediaRecorder?.release()
             mediaRecorder = null
 
-            // Create audio file
-            audioFile = File(filesDir, "recording_${System.currentTimeMillis()}.mp3")
-            if (!audioFile!!.exists()) audioFile!!.createNewFile()
+            // Create or reuse the audio file
+            if (audioFile == null) {
+                audioFile = File(filesDir, "recording_temp.mp3") // Single file for overwriting
+            }
 
             // Initialize MediaRecorder
             mediaRecorder = MediaRecorder().apply {
@@ -219,7 +294,7 @@ class MainActivity : ComponentActivity() {
             }
 
             isRecording = true
-            Log.d("VoiceMatchApp", "Recording started")
+            Log.d("VoiceMatchApp", "Recording started: ${audioFile?.absolutePath}")
         } catch (e: IOException) {
             Log.e("VoiceMatchApp", "Recording failed: ${e.message}")
             e.printStackTrace()
@@ -230,14 +305,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopRecording() {
-        mediaRecorder?.apply {
-            stop()
-            release()
+        try {
+            mediaRecorder?.apply {
+                stop()
+                release()
+            }
+            mediaRecorder = null
+            isRecording = false
+            Log.d("VoiceMatchApp", "Recording stopped, file saved at: ${audioFile?.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("VoiceMatchApp", "Error stopping recording: ${e.message}")
         }
-        mediaRecorder = null
-        isRecording = false
-        Log.d("VoiceMatchApp", "Recording stopped, file saved at: ${audioFile?.absolutePath}")
     }
+
 
     var responseString: String? = null
     var transcriptionText: String? = null // To store the extracted transcription_text
