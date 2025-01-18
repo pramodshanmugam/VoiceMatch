@@ -12,7 +12,6 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import android.view.MotionEvent
-import android.widget.Button
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.app.ActivityCompat
@@ -111,7 +110,7 @@ class MainActivity : ComponentActivity() {
 //    }
 
     private fun startListeningAndRecording() {
-        startContinuousRecording() // Start continuous recording
+//        startContinuousRecording() // Start continuous recording
         startListening() // Start speech recognition
     }
 
@@ -448,5 +447,4 @@ class MainActivity : ComponentActivity() {
             }.start()
         } ?: Log.e("VoiceMatchApp", "No audio file to upload")
     }
-
 }
