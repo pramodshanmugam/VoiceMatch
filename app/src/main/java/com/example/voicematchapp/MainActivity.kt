@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
                 MotionEvent.ACTION_DOWN -> {
                     isRecording = true
                     stopListening()
-//                    stopRecording()
+                    stopRecording()
                     stopContinuousRecording()
                     startRecording()
                     statusText.text = "Recording..."
