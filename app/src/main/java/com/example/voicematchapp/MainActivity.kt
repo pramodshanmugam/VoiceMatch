@@ -14,7 +14,9 @@ import android.util.Log
 import android.view.MotionEvent
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
+import com.google.android.material.card.MaterialCardView
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -23,9 +25,7 @@ import okhttp3.RequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
-import java.util.*
-import androidx.appcompat.app.AlertDialog
-import com.google.android.material.card.MaterialCardView
+import java.util.Locale
 
 
 class MainActivity : ComponentActivity() {
@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), 1)
         } else {
             initSpeechRecognizer()
+            startListeningAndRecording()
         }
 
         // Set up button behavior for recording
@@ -65,7 +66,8 @@ class MainActivity : ComponentActivity() {
                 MotionEvent.ACTION_DOWN -> {
                     isRecording = true
                     stopListening()
-                    stopRecording()
+//                    stopRecording()
+                    stopContinuousRecording()
                     startRecording()
                     statusText.text = "Recording..."
                     true
@@ -84,7 +86,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // Start listening and recording
-        startListeningAndRecording()
+//        startListeningAndRecording()
     }
 //    override fun onCreate(savedInstanceState: Bundle?) {
 //        super.onCreate(savedInstanceState)
@@ -110,7 +112,7 @@ class MainActivity : ComponentActivity() {
 //    }
 
     private fun startListeningAndRecording() {
-//        startContinuousRecording() // Start continuous recording
+        startContinuousRecording() // Start continuous recording
         startListening() // Start speech recognition
     }
 
@@ -238,7 +240,7 @@ class MainActivity : ComponentActivity() {
                 // Restart listening after a short delay
                 Handler(Looper.getMainLooper()).postDelayed({
                     startListening()
-                }, 10000) // Delay of 500ms
+                }, 500) // Delay of 500ms
             }
 
 
@@ -248,6 +250,7 @@ class MainActivity : ComponentActivity() {
                 partialMatches?.forEach { partialResult ->
                     Log.d("VoiceMatchApp", "Partial Recognized Speech: $partialResult")
                     if (partialResult.equals(WAKE_WORD, ignoreCase = true)) {
+                        stopRecording()
                         Log.d("VoiceMatchApp", "Wake word detected in partial results: $WAKE_WORD")
                         triggerApi(audioFile) // Trigger your API call
                     }
@@ -289,7 +292,7 @@ class MainActivity : ComponentActivity() {
 
             // Stop recording if ongoing
             if (isRecording) {
-                stopRecording()
+//                stopRecording()
                 Log.d("VoiceMatchApp", "Recording stopped before triggering API")
             }
 
@@ -298,8 +301,8 @@ class MainActivity : ComponentActivity() {
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "file", // This must match FastAPI's parameter name
-                    "partial_audio_user1.mp3", // Provide a valid filename
-                    RequestBody.create("audio/mp3".toMediaType(), file)
+                    "partial_audio_user1.wav", // Provide a valid filename
+                    RequestBody.create("audio/wav".toMediaType(), file)
                 )
                 .build()
 
@@ -343,13 +346,19 @@ class MainActivity : ComponentActivity() {
                     // Restart listening and recording on the main thread
                     Handler(Looper.getMainLooper()).post {
                         startListeningAndRecording()
+
                     }
                 }
             }.start()
         } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
     }
 
+    @Synchronized
     private fun startRecording() {
+        if (isRecording) {
+            Log.w("VoiceMatchApp", "Already recording, skipping...")
+            return
+        }
         try {
             // Release any previous MediaRecorder instance
             mediaRecorder?.release()
@@ -366,18 +375,14 @@ class MainActivity : ComponentActivity() {
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setOutputFile(audioFile?.absolutePath)
-                prepare() // Prepare MediaRecorder
-                start()   // Start recording
+                prepare()
+                start()
             }
 
             isRecording = true
             Log.d("VoiceMatchApp", "Recording started: ${audioFile?.absolutePath}")
         } catch (e: IOException) {
             Log.e("VoiceMatchApp", "Recording failed: ${e.message}")
-            e.printStackTrace()
-        } catch (e: IllegalStateException) {
-            Log.e("VoiceMatchApp", "MediaRecorder state error: ${e.message}")
-            e.printStackTrace()
         }
     }
 
@@ -406,8 +411,8 @@ class MainActivity : ComponentActivity() {
                 .setType(MultipartBody.FORM)
                 .addFormDataPart(
                     "file",
-                    "user1.mp3", // Set the desired filename here
-                    RequestBody.create("audio/mp3".toMediaType(), file)
+                    "user1.wav", // Set the desired filename here
+                    RequestBody.create("audio/wav".toMediaType(), file)
                 )
                 .build()
 
