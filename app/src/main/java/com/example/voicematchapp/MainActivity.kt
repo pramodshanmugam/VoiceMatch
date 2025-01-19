@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // Start listening and recording
+//        initSpeechRecognizer()
 //        startListeningAndRecording()
     }
 //    override fun onCreate(savedInstanceState: Bundle?) {
@@ -350,7 +351,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }.start()
+
         } ?: Log.e("VoiceMatchApp", "No audio file available for API trigger")
+//        startRecording()
     }
 
     @Synchronized
